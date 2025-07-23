@@ -161,6 +161,7 @@ class A2CBase(BaseAlgorithm):
 
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
+        self.record_freq = config.get('record_frequency', 500)
         self.save_best_after = config.get('save_best_after', 100)
         self.print_stats = config.get('print_stats', True)
         self.epochs_between_resets = config.get('epochs_between_resets', 0)
@@ -1382,7 +1383,7 @@ class ContinuousA2CBase(A2CBase):
         
         while True:
             epoch_num = self.update_epoch()
-            if epoch_num % 500 == 0 or epoch_num == 1:
+            if epoch_num % self.record_freq == 0 or epoch_num == 1:
                 # print('Starting recording')
                 uenv.start_recording() 
             reset_rewards = uenv.set_curriculum(epoch_num)
