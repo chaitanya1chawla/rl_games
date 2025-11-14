@@ -161,6 +161,7 @@ class A2CBase(BaseAlgorithm):
 
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
+        self.record_freq = config.get('record_frequency', 0)
         self.record_freq = config.get('record_frequency', 500)
         self.save_best_after = config.get('save_best_after', 100)
         self.print_stats = config.get('print_stats', True)
@@ -363,7 +364,7 @@ class A2CBase(BaseAlgorithm):
             network = builder.load(params['config']['central_value_config'])
             self.config['central_value_config']['network'] = network
 
-    def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
+    def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames, sigmas=None):
         # do we need scaled time?
         # self.diagnostics.send_info(self.writer)
         # self.writer.add_scalar('performance/step_inference_rl_update_fps', curr_frames / scaled_time, frame)
@@ -399,6 +400,8 @@ class A2CBase(BaseAlgorithm):
             'info/epochs': epoch_num,
             # 'frame': frame,
         }
+        if sigmas is not None and len(sigmas) > 0:
+            tolog['info/std'] = torch_ext.mean_list(sigmas).item()
         for k,v in self.aux_loss_dict.items():
             tolog['losses/' + k] = torch_ext.mean_list(v).item()
         # wandb.log(tolog, step=frame)
@@ -1119,7 +1122,7 @@ class DiscreteA2CBase(A2CBase):
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time,
                                 a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, 
-                                scaled_time, scaled_play_time, curr_frames)
+                                scaled_time, scaled_play_time, curr_frames, sigmas=None)
 
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
@@ -1255,6 +1258,7 @@ class ContinuousA2CBase(A2CBase):
         b_losses = []
         entropies = []
         kls = []
+        sigmas = []
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -1264,6 +1268,7 @@ class ContinuousA2CBase(A2CBase):
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)
+                sigmas.append(csigma)
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
@@ -1294,7 +1299,7 @@ class ContinuousA2CBase(A2CBase):
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
 
-        return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
+        return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul, sigmas
 
     def prepare_dataset(self, batch_dict):
         obses = batch_dict['obses']
@@ -1383,7 +1388,7 @@ class ContinuousA2CBase(A2CBase):
         
         while True:
             epoch_num = self.update_epoch()
-            if epoch_num % self.record_freq == 0 or epoch_num == 1:
+            if (epoch_num % self.record_freq) == 0 or epoch_num == 1:
                 # print('Starting recording')
                 uenv.start_recording() 
             reset_rewards = uenv.set_curriculum(epoch_num)
@@ -1391,7 +1396,7 @@ class ContinuousA2CBase(A2CBase):
                 print(f'Epoch {epoch_num}: Resetting rewards tracker after curriculum change')
                 self.clear_stats()
                 # self.reset_envs() # new: reset all the envs after curriculum change
-            step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+            step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul, sigmas = self.train_epoch()
             total_time += sum_time
             frame = self.frame // self.num_agents
 
@@ -1415,6 +1420,7 @@ class ContinuousA2CBase(A2CBase):
                 # log video  
                 frames = uenv.get_recorded_frames(wait_for_max=True)
                 if frames is not None:
+                # if frames is not None and epoch_num % 50 == 0:
                     video_array = np.concatenate([np.expand_dims(frame, axis=0) for frame in frames ], axis=0).swapaxes(1, 3).swapaxes(2, 3)
                     # wandb.log({"video": wandb.Video(video_array, fps=int(1/uenv.dt))}, step=epoch_num)
                     tolog[f"videos/epoch{epoch_num}"] = wandb.Video(video_array, fps=int(1/uenv.dt/4))
@@ -1432,7 +1438,7 @@ class ContinuousA2CBase(A2CBase):
 
                 stats_log = self.write_stats(total_time, epoch_num, step_time, play_time, update_time,
                                 a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame,
-                                scaled_time, scaled_play_time, curr_frames)
+                                scaled_time, scaled_play_time, curr_frames, sigmas)
                 tolog.update(stats_log) 
                 tolog.update(
                     dict(step=frame, iter=epoch_num, time=total_time)

@@ -150,7 +150,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            # Apply entropy coefficient curriculum from vec_env if available
+            effective_entropy_coef = self.entropy_coef
+            if hasattr(self.vec_env.env.env, 'entropy_curriculum_applied') and hasattr( self.vec_env.env.env, 'entropy_coef_multiplier'):
+                effective_entropy_coef = self.entropy_coef * self.vec_env.env.env.entropy_coef_multiplier
+
+            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * effective_entropy_coef + b_loss * self.bounds_loss_coef
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
             if aux_loss is not None:
