@@ -1505,7 +1505,8 @@ class ContinuousA2CBase(A2CBase):
                     should_exit = True
                 
                 # add an early stop if reward is too low:
-                if epoch_num > 2500 and (not uenv.use_curriculum):
+                if epoch_num > 2500:
+                # if epoch_num > 2500 and (not uenv.use_curriculum):
                     if self.game_rewards.current_size == 0:
                         print('WARNING: No rewards recorded')
                         mean_rewards = -np.inf
@@ -1515,12 +1516,20 @@ class ContinuousA2CBase(A2CBase):
                         should_exit = True
                         self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
                             + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
-                # also early stop if gains are 0:
-                if uenv.use_curriculum and uenv.curriculum.num_epoch_since_zero > 1500:
-                    print('Curriculum zero gains for 1500 epochs now, stopping')
+
+                # early stop if entropy is negative:
+                if len(entropies) > 0 and torch_ext.mean_list(entropies).item() < 0:
+                    print('Entropy too low, stopping')
                     should_exit = True
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
+
+                # # also early stop if gains are 0:
+                # if uenv.use_curriculum and uenv.curriculum.num_epoch_since_zero > 1500:
+                #     print('Curriculum zero gains for 1500 epochs now, stopping')
+                #     should_exit = True
+                #     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
+                #         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
 
 
                 if self.frame >= self.max_frames and self.max_frames != -1:
